@@ -1,0 +1,86 @@
+<!-- Tableau container & basic styles -->
+<style>
+  html,body{margin:0;padding:0;height:100%}
+  #tableau-container{width:100%;height:100vh}
+  tableau-viz{width:100%;height:100%;display:block}
+</style>
+
+<div id="tableau-container">Loading Tableau dashboard…</div>
+
+<!-- Tableau Embedding API -->
+<script type="module"
+        src="https://us-east-1.online.tableau.com/javascripts/api/tableau.embedding.3.latest.min.js"></script>
+
+<script type="module">
+(async function loadDashboard() {
+  const container = document.getElementById('tableau-container');
+
+  try {
+    /* 1 · fetch logged-in MemberStack profile */
+    const memberRes = await window.$memberstackDom.getCurrentMember();
+    if (!memberRes?.data) {
+      container.textContent = 'User is not logged in.';
+      return;
+    }
+    const m = memberRes.data;
+    const dashboard   = m.customFields?.dashboard    ?? 'DefaultDashboard';
+    const tabGroup    = m.customFields?.['tab-group'] ?? 'ExternalViewers';
+    const tableauUser = m.auth?.email                ?? 'default@example.com';
+
+    /* 2 · get MemberStack access token for backend auth (Memberstack 2.0) */
+    console.debug('[DEBUG] MemberStack DOM helpers:',
+      'getMemberCookie' in window.$memberstackDom,
+      'getMemberToken'  in window.$memberstackDom);
+
+    let msTokenMethod = 'none';
+    const msToken = window.$memberstackDom.getMemberCookie
+      ? (msTokenMethod = 'getMemberCookie',
+         await window.$memberstackDom.getMemberCookie())
+      : (window.$memberstackDom.getMemberToken
+          ? (msTokenMethod = 'getMemberToken',
+             await window.$memberstackDom.getMemberToken())
+          : null);
+
+    console.debug(`[DEBUG] Token retrieval method: ${msTokenMethod}`);
+    console.debug('[DEBUG] msToken length:', msToken ? msToken.length : 'null');
+
+    if (!msToken) {
+      console.error('MemberStack token missing');
+      container.textContent = 'Unable to retrieve authentication token.';
+      return;
+    }
+
+    /* 3 · exchange for Tableau-scoped JWT via Cloud Function */
+    const FN = 'https://jwt-generator-847696198884.us-east1.run.app';
+    const resp = await fetch(FN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${msToken}`
+      },
+      body: JSON.stringify({ sub: tableauUser, tabGroup })
+    });
+    console.debug('[DEBUG] Requesting Tableau JWT → status', resp.status);
+    if (!resp.ok) throw new Error('Token request failed');
+    const { access_token } = await resp.json();
+    console.debug('[DEBUG] Received access_token length:', access_token ? access_token.length : 'null');
+    console.log('[DEBUG] Tableau JWT:', access_token);
+
+    /* 4 · embed Tableau */
+    const viz = document.createElement('tableau-viz');
+    viz.setAttribute('src',
+      `https://us-east-1.online.tableau.com/t/cteanalytics-embed/views/${dashboard}/DOverview?embed=y`);
+    viz.setAttribute('hide-tabs','');
+    viz.setAttribute('toolbar','bottom');
+    viz.setAttribute('token', access_token);
+
+    container.replaceChildren(viz);
+  }
+  catch (e) {
+    console.error(e);
+    console.error('[DEBUG] loadDashboard catch →', e.name, e.message);
+    container.textContent =
+      'Error loading Tableau dashboard. Please try again later.';
+  }
+})();
+</script>
