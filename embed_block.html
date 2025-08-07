@@ -1,8 +1,3 @@
-<!-- ───────────── Webflow embed snippet — Tableau v3 Embedding API ───────────
-     Uses parent-page authentication (NO iframe-auth) to support
-     On-Demand Access (ephemeral users created by the JWT).
-     --------------------------------------------------------------------- -->
-
 <style>
   html, body           { margin:0; padding:0; height:100%; }
   #tableau-container   { width:100%; height:100vh; }
@@ -11,19 +6,17 @@
 
 <div id="tableau-container">Loading Tableau dashboard…</div>
 
-<!-- 1 · Load the ES-module build of the Embedding API -->
 <script
   type="module"
   src="https://us-east-1.online.tableau.com/javascripts/api/tableau.embedding.3.latest.min.js">
 </script>
 
-<!-- 2 · Application logic -->
 <script type="module">
-(async function loadDashboard () {
+(async function loadDashboard() {
   const container = document.getElementById('tableau-container');
 
   try {
-    /* 1 · Fetch logged-in Memberstack profile ---------------------------- */
+    // Fetch the logged-in Memberstack profile
     const memberRes = await window.$memberstackDom.getCurrentMember();
     if (!memberRes?.data) {
       container.textContent = 'User is not logged in.';
@@ -31,7 +24,7 @@
     }
     const m = memberRes.data;
 
-    /* 2 · Retrieve raw Memberstack token -------------------------------- */
+    // Retrieve raw Memberstack token
     let msToken;
     if (typeof window.$memberstackDom.getMemberToken === 'function') {
       msToken = await window.$memberstackDom.getMemberToken();
@@ -43,14 +36,39 @@
     }
     if (!msToken) throw new Error('Memberstack token missing');
 
-    /* 3 · Exchange Memberstack token for Tableau JWT -------------------- */
+    // Normalize `groups` into an actual array
+    const rawGroups = m.customFields.groups ?? m.customFields['groups'] ?? [];
+    let groups;
+    if (typeof rawGroups === 'string') {
+      try {
+        groups = JSON.parse(rawGroups);
+      } catch {
+        console.warn('Could not parse groups as JSON; using single-value array');
+        groups = [rawGroups];
+      }
+    } else {
+      groups = rawGroups;
+    }
+
+    // Normalize `claims_json` into a JSON string
+    const rawClaims =
+      m.customFields.claims_json
+      ?? m.customFields['claims-json']
+      ?? '{}';
+
+    // Exchange Memberstack token for Tableau JWT
     const body = {
       sub:           m.auth.email,
-      agency_id:     m.customFields.agency_id    ?? m.customFields['agency-id'] ?? null,
-      role:          m.customFields.role         ?? 'viewer',
+      agency_id:     m.customFields.agency_id
+                    ?? m.customFields['agency-id']
+                    ?? null,
+      role:          m.customFields.role ?? 'viewer',
       allowed_kpis:  m.customFields.allowed_kpis ?? [],
       tabGroup:      m.customFields['tab-group'] ?? 'ExternalViewers',
-      landing_page:  m.customFields['landing-page'] ?? 'DOverview'
+      landing_page:  m.customFields['landing-page'] ?? 'DOverview',
+
+      groups,
+      claims_json: rawClaims
     };
 
     const resp = await fetch('https://jwt-generator-847696198884.us-east1.run.app/', {
@@ -65,7 +83,14 @@
     if (!resp.ok) throw new Error(`Token fetch failed (${resp.status})`);
     const { access_token } = await resp.json();
 
-    /* 4 · Embed Tableau viz --------------------------------------------- */
+    // Debug: log decoded JWT payload to console
+    // try {
+    //   console.table(JSON.parse(atob(access_token.split('.')[1])));
+    // } catch {
+    //   console.warn('Could not decode token');
+    // }
+
+    // Embed the Tableau viz
     const dashboard   = m.customFields.dashboard      ?? 'DefaultDashboard';
     const landingPage = m.customFields['landing-page'] ?? 'DOverview';
     const vizUrl =
@@ -76,12 +101,12 @@
     vizElem.src           = vizUrl;
     vizElem.setAttribute('hide-tabs', '');
     vizElem.setAttribute('toolbar',   'bottom');
-    vizElem.setAttribute('token',    access_token);
-    // NOTE: no iframe-auth attribute → parent-page auth flow
+    vizElem.setAttribute('token',      access_token);
     container.textContent = '';
     container.appendChild(vizElem);
+
   } catch (err) {
-    console.error('[DEBUG] loadDashboard catch →', err);
+    console.error('loadDashboard error →', err);
     container.textContent =
       'Error loading Tableau dashboard. Please try again later.';
   }
