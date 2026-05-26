@@ -1,0 +1,52 @@
+<!-- Mirror of what is pasted into Webflow > Page Settings > Custom Code on
+     the Tableau dashboard page. Tracked here for version control only;
+     this file is NOT served by jsdelivr at runtime — only embed_block.html
+     is. The Webflow Custom Code is the runtime source of truth.
+
+     Keep this file in sync when editing the Webflow snippet. The most
+     common change is bumping PROD_TAG below when cutting a prod release. -->
+
+<style>
+  html, body         { margin:0; padding:0; height:100%; }
+  #tableau-container { width:100%; height:100vh; }
+  tableau-viz        { width:100%; height:100%; display:block; }
+</style>
+
+<div id="tableau-container">Loading Tableau dashboard…</div>
+
+<script>
+(async function loadEmbed() {
+  const container = document.getElementById('tableau-container');
+
+  const REPO        = 'Center-for-Transportation-Environment/webflow-embed-block';
+  const FILE        = 'embed_block.html';
+  const PROD_TAG    = 'v0.1.0';   // bump on each prod release
+  const STAGING_REF = 'staging';
+
+  const isStaging = window.location.hostname.endsWith('.webflow.io')
+                 || window.location.hostname.includes('zebra-sandbox');
+  const ref = isStaging ? STAGING_REF : PROD_TAG;
+  const url = `https://cdn.jsdelivr.net/gh/${REPO}@${ref}/${FILE}`;
+
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`fetch ${res.status} from ${url}`);
+    const html = await res.text();
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    container.replaceWith(wrapper);
+
+    wrapper.querySelectorAll('script').forEach(old => {
+      const fresh = document.createElement('script');
+      [...old.attributes].forEach(a => fresh.setAttribute(a.name, a.value));
+      fresh.textContent = old.textContent;
+      old.replaceWith(fresh);
+    });
+  } catch (err) {
+    console.error('Embed loader error:', err);
+    const c = document.getElementById('tableau-container');
+    if (c) c.textContent = 'Error loading Tableau dashboard. Please try again later.';
+  }
+})();
+</script>
