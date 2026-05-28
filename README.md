@@ -4,35 +4,78 @@ Code for the Tableau dashboard embed on the CTE Webflow site.
 
 ## Files
 
-- **`webflow_loader.html`** — the small loader snippet that lives in Webflow's Page Settings > Custom Code on the dashboard page. Tracked here for reference; the Webflow paste is the runtime source of truth. Detects staging vs prod hostname and fetches the matching `embed_block.html` via jsdelivr.
-- **`embed_block.html`** — the actual Tableau embed (Memberstack auth, JWT exchange, `tableau-viz` render). Served by jsdelivr to the loader at runtime.
+- **`webflow_loader.html`** — the loader snippet that lives in Webflow's Page Settings > Custom Code on the dashboard page. Tracked here for reference; the Webflow paste is the runtime source of truth. Detects staging vs prod hostname, picks the right URL, and fetches the matching `embed_block.html`.
+- **`embed_block.html`** — the actual Tableau embed (Memberstack auth, JWT exchange, `tableau-viz` render, viz sizing styles). Loaded at runtime by the loader. **This is where you change embed dimensions and other render behavior.**
+
+## How content reaches the browser
+
+```
+Webflow page → loader (in Custom Code) → fetches embed_block.html → injects scripts → JWT exchange → renders Tableau
+```
+
+The loader picks the source based on hostname:
+- Staging Webflow (`*.webflow.io`) → `raw.githubusercontent.com/.../staging/embed_block.html`
+- Prod Webflow (`dashboard.cte.tv`) → `cdn.jsdelivr.net/.../@v0.1.2/embed_block.html`
+
+DevTools console shows the active environment and version on every page load:
+- `[STAGING] webflow-embed-block@staging` (green)
+- `[PROD] webflow-embed-block@v0.1.2` (blue)
 
 ## Branches and refs
 
-- `main` — production embed. Tagged on each release (e.g. `v0.1.0`).
-- `staging` — staging embed. Loader fetches `@staging` directly on Webflow staging sites and calls `jwt-generator-staging` Cloud Run.
+- `main` — production embed. Protected; changes go via PR. Tagged on each release (e.g. `v0.1.2`).
+- `staging` — staging embed. Push-open for fast iteration. Webflow staging site picks up pushes within ~5 min.
 
-## Versioning and Webflow
+## Updating staging (anyone with push access)
 
-Tags on `main` are the versioning unit for production. The Webflow Custom Code paste references a specific tag (e.g. `v0.1.0`) via `PROD_TAG` in the loader. **Pushing a new commit to `main` does NOT update production** — production only moves when you cut a new tag AND bump `PROD_TAG` in the Webflow paste.
+```bash
+git checkout staging
+# edit embed_block.html
+git add embed_block.html
+git commit -m "..."
+git push origin staging
+```
 
-### Why tags, not @main
+Hard-refresh `zebra-sandbox.webflow.io/dashboard`. GitHub raw's cache means changes show up within ~5 min.
 
-Pointing prod at `@main` would mean any push goes live to the dashboard within ~5 minutes (jsdelivr's branch cache TTL). Tags are immutable refs — a bad push to `main` can't propagate to prod. Releases become an explicit, auditable decision: tag, bump, publish.
+## Updating prod (cutting a release)
 
-### Cutting a prod release
+Prod doesn't auto-update from any branch. Releases are explicit, version-tagged commits on `main`.
 
-1. Iterate on `staging` branch. Webflow staging picks it up via `@staging` within minutes of each push.
-2. Once happy, merge `staging` into `main` (via PR, once branch protection is on).
-3. Tag: `git tag v0.2.0 main && git push origin v0.2.0`.
-4. Update `PROD_TAG` in **both** `webflow_loader.html` (this repo, then commit + push) AND in the Webflow Custom Code paste.
-5. Publish the Webflow site (Designer → Publish → check `dashboard.cte.tv`).
-6. Pre-warm jsdelivr so the first user request doesn't pay the cold-cache cost: `curl https://purge.jsdelivr.net/gh/Center-for-Transportation-Environment/webflow-embed-block@v0.2.0/embed_block.html`.
+1. Iterate on `staging` until happy.
+2. Open a PR `staging → main`. Get approval (or self-merge if solo).
+3. After merge, bump `PROD_TAG` in `webflow_loader.html` (the in-repo copy) to the next semver. Commit on `main` via PR.
+4. Tag the new commit: `git tag v0.2.0 main && git push origin v0.2.0`.
+5. Update `PROD_TAG` in the Webflow Custom Code paste to match (one line change).
+6. Publish Webflow to `dashboard.cte.tv`.
+7. (Optional) Pre-warm jsdelivr: `curl https://purge.jsdelivr.net/gh/Center-for-Transportation-Environment/webflow-embed-block@v0.2.0/embed_block.html`
 
-### Rolling back
+## Rolling back
 
-Bump `PROD_TAG` in the Webflow paste back to the previous tag (e.g. `v0.1.0`) and republish. No GitHub change needed — old tags are still served by jsdelivr indefinitely.
+Change `PROD_TAG` in the Webflow paste back to a previous tag (e.g. `v0.1.0`) and republish. No GitHub change needed; old tags are served by jsdelivr indefinitely.
 
-### Staging
+## Why two different sources (jsdelivr vs GitHub raw)?
 
-Staging tracks the `staging` branch directly with no tagging. Pushes to `staging` are live within ~5 minutes (jsdelivr branch cache TTL). If you need to see a change faster, purge: `curl https://purge.jsdelivr.net/gh/Center-for-Transportation-Environment/webflow-embed-block@staging/embed_block.html`.
+- **Prod** uses jsdelivr because **tag** URLs are cached immutably (1 year), so loads are fast and stable.
+- **Staging** uses `raw.githubusercontent.com` because jsdelivr's **branch** resolver never indexed this repo's branches (see Known issues). raw has a shorter cache (~5 min) and serves branch HEADs directly with CORS enabled.
+
+## Branch protection rules
+
+The `main` branch is protected:
+- Direct pushes blocked (PR required)
+- Force pushes blocked
+- Branch deletion blocked
+- Linear history required (squash or rebase merges only)
+- Admins can bypass the rule in emergencies
+
+`staging` is unprotected and open for direct push.
+
+## Known issues
+
+### jsdelivr branch resolver
+
+jsdelivr's GitHub branch indexer never populated this repo's branches (only its tags). We work around it by routing the staging path through `raw.githubusercontent.com`. Prod uses tag URLs, which work correctly.
+
+### Never re-create a tag
+
+If you tag `v0.2.0` and find a bug, cut `v0.2.1`. Don't force-move `v0.2.0` to a new commit. jsdelivr's cache makes recreated tags unreliable.
