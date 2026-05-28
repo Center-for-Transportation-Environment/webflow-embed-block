@@ -26,7 +26,15 @@
   const isStaging = window.location.hostname.endsWith('.webflow.io')
                  || window.location.hostname.includes('zebra-sandbox');
   const ref = isStaging ? STAGING_REF : PROD_TAG;
-  const url = `https://cdn.jsdelivr.net/gh/${REPO}@${ref}/${FILE}`;
+
+  console.log(
+    `%c[${isStaging ? 'STAGING' : 'PROD'}] webflow-embed-block@${ref}`,
+    `color:${isStaging ? '#0a0' : '#06b'};font-weight:bold`
+  );
+
+  const url = isStaging
+    ? `https://raw.githubusercontent.com/${REPO}/${STAGING_REF}/${FILE}`
+    : `https://cdn.jsdelivr.net/gh/${REPO}@${ref}/${FILE}`;
 
   try {
     const res = await fetch(url, { cache: 'no-store' });
