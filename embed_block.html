@@ -99,12 +99,13 @@
       `${dashboard}/${landingPage}?embed=y`;
 
     const vizElem = document.createElement('tableau-viz');
-    vizElem.src           = vizUrl;
-    vizElem.width         = '100%'; 
-    vizElem.height        = '100%'; 
+    vizElem.src               = vizUrl;
+    vizElem.style.width       = '100%';       // Forces CSS width
+    vizElem.style.height      = '100%';      // Forces CSS height
+    vizElem.setAttribute('device', 'desktop'); // Prevents Phone layout fallback
     vizElem.setAttribute('hide-tabs', '');
-    vizElem.setAttribute('toolbar',   'bottom');
-    vizElem.setAttribute('token',      access_token);
+    vizElem.setAttribute('toolbar', 'bottom');
+    vizElem.setAttribute('token', access_token);
     container.textContent = '';
     container.appendChild(vizElem);
 
