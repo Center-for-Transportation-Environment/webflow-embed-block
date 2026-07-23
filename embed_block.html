@@ -110,11 +110,17 @@
 
     const vizElem = document.createElement('tableau-viz');
     vizElem.src               = vizUrl;
-    vizElem.style.width       = '100%';       // Allows width to flex between 1024px and 1700px
-    vizElem.setAttribute('device', 'desktop'); // Ensures desktop view stays active
+
+    // Use setAttribute rather than style property for Embedding API v3
+    vizElem.setAttribute('width', '100%');
+    vizElem.setAttribute('height', '100%');
+    
+    // Explicitly set device to desktop so mobile layout doesn't trigger
+    vizElem.setAttribute('device', 'desktop');
     vizElem.setAttribute('hide-tabs', '');
     vizElem.setAttribute('toolbar', 'bottom');
     vizElem.setAttribute('token', access_token);
+
     container.textContent = '';
     container.appendChild(vizElem);
 
